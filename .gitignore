@@ -11,3 +11,4 @@ out/
 *.iso.part
 *.verify.log
 credentials*.txt
+pypi.env

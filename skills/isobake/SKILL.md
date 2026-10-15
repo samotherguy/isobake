@@ -11,7 +11,7 @@ device. Config lives in `isobake.yaml`. Full docs: the project README.
 ## Workflow
 
 1. **Check the tool is installed.** `isobake --version`. If missing:
-   `pipx install git+https://github.com/samotherguy/isobake` and
+   `pipx install isobake` and
    `sudo apt install xorriso gnupg openssl curl`.
 2. **Start a project.** In an empty directory run `isobake init`, then edit
    `isobake.yaml`. Ask the user only for what the chosen presets need

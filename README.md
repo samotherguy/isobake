@@ -9,7 +9,7 @@ drivers, or registering itself with a webhook on first boot. Every ISO can
 be boot-tested headless under QEMU before it goes on a USB stick.
 
 ```
-pipx install git+https://github.com/samotherguy/isobake   # or: pip install git+https://github.com/samotherguy/isobake
+pipx install isobake   # or: pip install isobake
 isobake init          # writes isobake.yaml
 isobake build         # downloads + verifies Ubuntu 24.04, bakes out/node-01.iso
 isobake verify out/node-01.iso
