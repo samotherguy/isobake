@@ -15,6 +15,8 @@ isobake build         # downloads + verifies Ubuntu 24.04, bakes out/node-01.iso
 isobake verify out/node-01.iso
 ```
 
+![isobake build --verify: the ISO is baked in seconds, then booted under QEMU through install, first boot and an unattended reboot, each ending in a clean power-off](docs/demo.gif)
+
 ## Why
 
 PXE, MAAS and Packer are the right answer when you own the network. They are
