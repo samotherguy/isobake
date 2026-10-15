@@ -1,0 +1,25 @@
+autoinstall:
+  user-data:
+    packages:
+      - autossh
+    write_files:
+      - path: /etc/systemd/system/reverse-ssh.service
+        permissions: "0644"
+        content: |
+          [Unit]
+          Description=Reverse SSH tunnel to ${reverse_ssh_host}
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=${username}
+          Environment=AUTOSSH_GATETIME=0
+          ExecStart=/usr/bin/autossh -M 0 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new -R ${reverse_ssh_port}:localhost:22 ${reverse_ssh_user}@${reverse_ssh_host}
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+    runcmd:
+      - systemctl daemon-reload
+      - systemctl enable --now reverse-ssh.service

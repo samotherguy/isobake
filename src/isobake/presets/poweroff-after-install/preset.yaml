@@ -1,0 +1,23 @@
+autoinstall:
+  shutdown: poweroff
+  user-data:
+    write_files:
+      - path: /etc/systemd/system/isobake-poweroff.service
+        permissions: "0644"
+        content: |
+          [Unit]
+          Description=isobake verify: power off once the system is up
+          After=multi-user.target cloud-final.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/systemctl poweroff
+
+          [Install]
+          WantedBy=multi-user.target
+    runcmd:
+      - systemctl enable isobake-poweroff.service
+    power_state:
+      mode: poweroff
+      timeout: 30
+      condition: true

@@ -1,0 +1,19 @@
+autoinstall:
+  user-data:
+    runcmd:
+      - |
+        set -e
+        key=/dev/disk/by-label/linux-key
+        for i in $(seq 1 30); do [ -e "$key" ] && break; sleep 1; done
+        [ -e "$key" ] || { echo "usb-keyfile: no partition labelled linux-key found" >&2; exit 1; }
+        mkdir -p /mnt/linux-key && mount "$key" /mnt/linux-key
+        [ -s /mnt/linux-key/linux.key ] || dd if=/dev/urandom of=/mnt/linux-key/linux.key bs=256 count=1 status=none
+        chmod 0400 /mnt/linux-key/linux.key
+        dev=$(blkid -t TYPE=crypto_LUKS -o device | head -1)
+        printf '%s' '${luks_passphrase}' > /run/isobake-luks.key
+        cryptsetup luksAddKey --key-file /run/isobake-luks.key "$dev" /mnt/linux-key/linux.key
+        rm -f /run/isobake-luks.key
+        umount /mnt/linux-key
+        sed -i 's#\bnone\b#/dev/disk/by-label/linux-key:/linux.key:10#; s/\(luks[^ ]*\)$/\1,keyscript=\/lib\/cryptsetup\/scripts\/passdev/' /etc/crypttab
+        update-initramfs -u -k all
+        find /var/lib/cloud /var/log/installer -type f -exec grep -lF '${luks_passphrase}' {} + 2>/dev/null | xargs -r shred -u

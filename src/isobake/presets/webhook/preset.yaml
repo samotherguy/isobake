@@ -1,0 +1,5 @@
+autoinstall:
+  user-data:
+    runcmd:
+      - |
+        curl -fsS -X POST "${webhook_url}" -H "Content-Type: application/json" -d "$(printf '{"hostname":"%s","machine_id":"%s","mac":"%s","ip":"%s","ssh_pubkey":"%s"}' "$(hostname)" "$(cat /etc/machine-id)" "$(cat /sys/class/net/$(ip route show default | awk '/default/ {print $5; exit}')/address)" "$(hostname -I | awk '{print $1}')" "$(cat /etc/ssh/ssh_host_ed25519_key.pub)")"

@@ -1,0 +1,15 @@
+autoinstall:
+  user-data:
+    runcmd:
+      - |
+        set -e
+        apt-get install -y dracut tpm2-tools
+        dev=$(blkid -t TYPE=crypto_LUKS -o device | head -1)
+        printf '%s' '${luks_passphrase}' > /run/isobake-luks.key
+        systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 --unlock-key-file=/run/isobake-luks.key "$dev"
+        rm -f /run/isobake-luks.key
+        sed -i 's/\(\bluks\b\)\(,tpm2-device=auto\)\?/\1,tpm2-device=auto/' /etc/crypttab
+        printf 'hostonly="yes"\nadd_dracutmodules+=" tpm2-tss crypt "\n' > /etc/dracut.conf.d/isobake-tpm2.conf
+        dracut -f --regenerate-all
+        update-grub
+        find /var/lib/cloud /var/log/installer -type f -exec grep -lF '${luks_passphrase}' {} + 2>/dev/null | xargs -r shred -u

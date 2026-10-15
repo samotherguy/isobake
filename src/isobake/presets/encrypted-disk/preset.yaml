@@ -1,0 +1,5 @@
+autoinstall:
+  storage:
+    layout:
+      name: lvm
+      password: ${luks_passphrase}

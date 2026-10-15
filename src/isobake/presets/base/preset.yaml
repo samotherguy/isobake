@@ -1,0 +1,17 @@
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  storage:
+    layout:
+      name: direct
+  ssh:
+    install-server: true
+    allow-pw: true
+  packages:
+    - curl
+    - qemu-guest-agent
+  late-commands: []
+  user-data:
+    package_update: true
