@@ -66,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--verify", action="store_true",
                    help=f"add the {VERIFY_PRESET} preset and boot-test each ISO under QEMU")
     s.add_argument("--timeout", type=int, default=1800, help="verify timeout per phase in seconds")
+    s.add_argument("--keep-disk", action="store_true", help="verify: keep each VM disk and TPM state")
     _phase_flags(s)
     s.set_defaults(func=cmd_build)
 
@@ -76,7 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cpus", type=int, default=2)
     s.add_argument("--disk", type=int, default=20, help="GiB")
     s.add_argument("--firmware", choices=["auto", "uefi", "bios"], default="auto")
-    s.add_argument("--keep-disk", action="store_true")
+    s.add_argument("--keep-disk", action="store_true", help="keep the VM disk and TPM state afterwards")
+    s.add_argument("--resume", type=Path, metavar="DISK", help="resume on a kept disk: skips the install phase")
     s.add_argument("--inject-poweroff", action="store_true",
                    help="verify a production ISO by adding the poweroff preset to a temporary copy")
     s.add_argument("--tpm", action="store_true", help="attach an emulated TPM 2.0 (needs swtpm)")
@@ -199,7 +201,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         selected = set(cfg.presets)
         for dev in cfg.devices:
             verify.run(cfg.output / f"{dev.hostname}.iso", timeout=args.timeout, phases=_phases(args),
-                       tpm=TPM_PRESET in selected, usb_key=USB_PRESET in selected, log=log)
+                       tpm=TPM_PRESET in selected, usb_key=USB_PRESET in selected,
+                       keep_disk=args.keep_disk, log=log)
     return 0
 
 
@@ -207,7 +210,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verify.run(
         args.iso, timeout=args.timeout, memory_mb=args.memory, cpus=args.cpus,
         disk_gb=args.disk, firmware=args.firmware, keep_disk=args.keep_disk, phases=_phases(args),
-        tpm=args.tpm, usb_key=args.usb_key, inject=args.inject_poweroff, log=log,
+        tpm=args.tpm, usb_key=args.usb_key, inject=args.inject_poweroff, disk=args.resume, log=log,
     )
     return 0
 

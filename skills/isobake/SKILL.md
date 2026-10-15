@@ -43,7 +43,7 @@ device. Config lives in `isobake.yaml`. Full docs: the project README.
 | `webhook` | `vars.webhook_url` |
 | `encrypted-disk` | nothing; the build prints a per-device disk passphrase, show it once |
 | `tpm-unlock` | confirm the hardware has TPM 2.0 enabled; needs `encrypted-disk` |
-| `usb-keyfile` | a USB stick formatted `mkfs.ext4 -L linux-key`; needs `encrypted-disk` |
+| `usb-keyfile` | a USB stick formatted `mkfs.ext4 -L linux-key`, plugged in during the install; needs `encrypted-disk` |
 | `poweroff-after-install` | nothing; `--verify` adds it automatically |
 
 ## Rules

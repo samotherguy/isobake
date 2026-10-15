@@ -1,6 +1,8 @@
 """Boot a built ISO headless under QEMU.
 
-Phases, each passing when the VM powers itself off:
+QEMU runs without ``-no-reboot``: a guest reboot (shim's fallback creating a boot entry, a kernel
+update) restarts the VM in place, and QEMU only exits when the guest powers off. Phases, each
+passing when the VM powers itself off:
   1. install     boot the ISO, the installer runs and powers off
   2. first boot  boot the installed disk, cloud-init runs every runcmd and powers off
   3. reboot      boot the disk again, it must come up unattended (TPM or USB unlock) and power off
@@ -36,6 +38,12 @@ def find_ovmf() -> Path | None:
     return next((Path(p) for p in OVMF_CANDIDATES if Path(p).is_file()), None)
 
 
+def ovmf_vars_template(code: Path) -> Path | None:
+    """The writable NVRAM image that pairs with an OVMF_CODE file, if the distro ships one."""
+    cand = code.with_name(code.name.replace("CODE", "VARS"))
+    return cand if cand != code and cand.is_file() else None
+
+
 def kvm_available() -> bool:
     return os.access("/dev/kvm", os.R_OK | os.W_OK)
 
@@ -43,6 +51,7 @@ def kvm_available() -> bool:
 def qemu_command(
     disk: Path, log: Path, memory_mb: int, cpus: int, firmware: str, ovmf: Path | None,
     iso: Path | None = None, tpm_sock: Path | None = None, usb_key: Path | None = None,
+    nvram: Path | None = None,
 ) -> list[str]:
     cmd = [
         "qemu-system-x86_64",
@@ -51,7 +60,6 @@ def qemu_command(
         "-display", "none",
         "-monitor", "none",
         "-serial", f"file:{log}",
-        "-no-reboot",
         "-drive", f"file={disk},format=qcow2,if=virtio",
         "-netdev", "user,id=n0",
         "-device", "virtio-net-pci,netdev=n0",
@@ -73,6 +81,8 @@ def qemu_command(
         if ovmf is None:
             raise MissingTool("OVMF firmware", "ovmf")
         cmd += ["-drive", f"if=pflash,format=raw,readonly=on,file={ovmf}"]
+        if nvram is not None:
+            cmd += ["-drive", f"if=pflash,format=raw,file={nvram}"]
     return cmd
 
 
@@ -87,17 +97,25 @@ def make_usb_key_image(path: Path, size_mb: int = 16) -> Path:
 
 
 class _SoftwareTpm:
-    """swtpm socket for the lifetime of a verify run. State persists across phases, like a real chip."""
+    """swtpm for a verify run. swtpm exits when QEMU disconnects, so it is restarted for every
+    phase against the same state directory; the sealed key persists like it would in a real chip."""
 
     def __init__(self, workdir: Path):
         if not shutil.which("swtpm"):
             raise MissingTool("swtpm", "swtpm")
         self.state = workdir / "tpm"
-        self.state.mkdir()
+        self.state.mkdir(exist_ok=True)
         self.sock = workdir / "swtpm.sock"
         self.proc: subprocess.Popen | None = None
 
-    def __enter__(self) -> Path:
+    def __enter__(self) -> _SoftwareTpm:
+        return self
+
+    def socket(self) -> Path:
+        """Start (or restart) swtpm and return its control socket."""
+        if self.proc is not None and self.proc.poll() is None and self.sock.exists():
+            return self.sock
+        self.sock.unlink(missing_ok=True)
         self.proc = subprocess.Popen(
             ["swtpm", "socket", "--tpm2", "--tpmstate", f"dir={self.state}",
              "--ctrl", f"type=unixio,path={self.sock}", "--log", "level=1"],
@@ -139,7 +157,8 @@ def _phase(name: str, cmd: list[str], timeout: int, serial_log: Path, log) -> in
         proc = subprocess.run(cmd, timeout=timeout, capture_output=True, text=True)
     except subprocess.TimeoutExpired as e:
         raise VerifyError(
-            f"{name}: timed out after {timeout}s, the VM did not power off.\n{_tail(serial_log)}"
+            f"{name}: timed out after {timeout}s, the VM did not power off "
+            f"(stuck installer, passphrase prompt, or reboot loop).\n{_tail(serial_log)}"
         ) from e
     elapsed = int(time.monotonic() - start)
     if proc.returncode != 0:
@@ -167,6 +186,7 @@ def run(
     tpm: bool = False,
     usb_key: bool = False,
     inject: bool = False,
+    disk: Path | None = None,
     log=print,
 ) -> Path:
     """Return the serial log path on success; raise VerifyError on timeout or bad exit."""
@@ -180,10 +200,23 @@ def run(
         firmware = "uefi" if ovmf else "bios"
     serial_log = iso.with_suffix(".verify.log")
     serial_log.unlink(missing_ok=True)
-    workdir = Path(tempfile.mkdtemp(prefix="isobake-verify-"))
-    disk = workdir / "disk.qcow2"
-    subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", str(disk), f"{disk_gb}G"], check=True)
-    key_img = make_usb_key_image(workdir / "usb-key.img") if usb_key else None
+    resume = disk is not None
+    if resume:
+        if not disk.is_file():
+            raise VerifyError(f"disk not found: {disk}")
+        workdir = disk.parent
+    else:
+        workdir = Path(tempfile.mkdtemp(prefix="isobake-verify-"))
+        disk = workdir / "disk.qcow2"
+        subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", str(disk), f"{disk_gb}G"], check=True)
+    nvram = None
+    if firmware == "uefi" and ovmf is not None and (tpl := ovmf_vars_template(ovmf)):
+        nvram = workdir / "nvram.fd"  # persistent across phases, like a real machine's NVRAM
+        if not nvram.exists():
+            shutil.copy(tpl, nvram)
+    key_img = workdir / "usb-key.img" if usb_key else None
+    if key_img is not None and not key_img.exists():
+        make_usb_key_image(key_img)
     if inject:
         log("injecting poweroff-after-install into a temporary copy")
         iso = inject_poweroff(iso, workdir / iso.name)
@@ -192,14 +225,18 @@ def run(
         f"{phases} phase(s), timeout {timeout}s per phase"
         + (f", {', '.join(extras)}" if extras else "") + f", serial log {serial_log}")
     names = ["install", "first boot", "reboot"][:phases]
+    if resume:
+        names = names[1:]  # the disk already holds an installed system
+        log(f"resuming from {disk}, skipping the install phase")
     try:
-        with _SoftwareTpm(workdir) if tpm else _NoTpm() as tpm_sock:
-            for i, name in enumerate(names):
+        with _SoftwareTpm(workdir) if tpm else _NoTpm() as chip:
+            for name in names:
                 cmd = qemu_command(disk, serial_log, memory_mb, cpus, firmware, ovmf,
-                                   iso=iso if i == 0 else None, tpm_sock=tpm_sock, usb_key=key_img)
+                                   iso=iso if name == "install" else None, tpm_sock=chip.socket(),
+                                   usb_key=key_img, nvram=nvram)
                 _phase(name, cmd, timeout, serial_log, log)
     finally:
-        if keep_disk:
+        if keep_disk or resume:
             log(f"disk kept at {disk}")
         else:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -208,7 +245,10 @@ def run(
 
 
 class _NoTpm:
-    def __enter__(self) -> None:
+    def __enter__(self) -> _NoTpm:
+        return self
+
+    def socket(self) -> None:
         return None
 
     def __exit__(self, *exc) -> None:

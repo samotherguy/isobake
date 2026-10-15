@@ -3,11 +3,12 @@
 ## 0.2.0 (2026-10-15)
 
 - `encrypted-disk` preset: LUKS2 under LVM with a per-device passphrase
-- `tpm-unlock` preset: unattended boot via TPM 2.0 (`systemd-cryptenroll`, dracut initrd)
+- `tpm-unlock` preset: unattended boot via TPM 2.0, bound with Clevis during the install
 - `usb-keyfile` preset: unattended boot via a keyfile on a `linux-key` USB partition
 - verify runs a third phase, an unattended reboot, and can attach a software TPM (`--tpm`)
   or a virtual key stick (`--usb-key`); `build --verify` does so automatically
-- `verify --inject-poweroff` tests a production ISO through a temporary copy
+- `verify --inject-poweroff` tests a production ISO through a temporary copy; `--keep-disk` and `--resume`
+- verify keeps UEFI NVRAM across phases and lets the guest reboot in place
 - `doctor` command
 - credentials table gains a disk passphrase column when encryption is selected
 

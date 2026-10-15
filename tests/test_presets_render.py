@@ -82,7 +82,8 @@ def test_render_allows_generated_luks_passphrase_only_at_storage_layout():
     text = render.render_device(cfg, cfg.devices[0], "$6$x$y", [], luks_passphrase="Secret24Chars")
     doc = yaml.safe_load(text)["autoinstall"]
     assert doc["storage"]["layout"] == {"name": "lvm", "password": "Secret24Chars"}
-    assert "Secret24Chars" in doc["user-data"]["runcmd"][0]
+    assert any("Secret24Chars" in c for c in doc["late-commands"])
+    assert "Secret24Chars" not in str(doc["user-data"])  # nothing secret reaches the installed seed
     cfg = _cfg(overrides={"autoinstall": {"identity": {"password": "plain"}}})
     with pytest.raises(ConfigError, match="identity.password: plaintext"):
         render.render_device(cfg, cfg.devices[0], "$6$x$y", [])

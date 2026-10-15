@@ -107,8 +107,8 @@ Flash with `dd`, Ventoy, Rufus or balenaEtcher. Boot the machine from USB. Walk 
 | `reverse-ssh` | Persistent autossh reverse tunnel to a host you own | `vars.reverse_ssh_host/user/port` |
 | `webhook` | POSTs hostname, machine-id, MAC, IP and SSH host key on first boot | `vars.webhook_url` |
 | `encrypted-disk` | LUKS2 under LVM, per-device passphrase shown once at build | |
-| `tpm-unlock` | Seals the LUKS key in the TPM 2.0 (PCR 7) via `systemd-cryptenroll`, switches initramfs to dracut | `encrypted-disk`, TPM 2.0 on |
-| `usb-keyfile` | Keyfile on a USB partition labelled `linux-key`, unlocked through cryptsetup's `passdev` | `encrypted-disk`, a stick: `mkfs.ext4 -L linux-key` |
+| `tpm-unlock` | Seals the LUKS key in the TPM 2.0 (PCR 7) with Clevis during the install | `encrypted-disk`, TPM 2.0 on |
+| `usb-keyfile` | Keyfile on a USB partition labelled `linux-key`, unlocked through cryptsetup's `passdev` | `encrypted-disk`, the stick plugged in during install |
 | `poweroff-after-install` | Test only: power off after install, after first boot, and on every boot after | |
 
 Merge rules: mappings merge recursively, lists append without duplicates,
@@ -167,7 +167,8 @@ isobake verify out/edge-01.iso --inject-poweroff --tpm
 ```
 
 That merges the poweroff preset into a temporary copy and boots the copy.
-The ISO you ship is untouched.
+The ISO you ship is untouched. `--keep-disk` leaves the VM disk and TPM
+state behind, and `--resume DISK` picks them up again without reinstalling.
 
 `isobake doctor` lists every tool verify and build need and what to install.
 
@@ -199,21 +200,25 @@ edge-01   ops       kQ3xT9wLm2Zp7RfC1dHs  Hs8dKq2mN4vB7xR1tY6wP0zL
 ```
 
 The installer formats the disk as LUKS2 under LVM with that passphrase.
-On first boot `tpm-unlock` runs `systemd-cryptenroll --tpm2-device=auto
---tpm2-pcrs=7`, sets `tpm2-device=auto` in crypttab, installs dracut (Ubuntu's
-initramfs-tools ignores TPM options) and regenerates the initrd. From the
-next boot the disk unlocks itself when the secure-boot state matches. Move
-the disk to another machine, or change the firmware, and it asks for the
-passphrase instead. The passphrase stays in keyslot 0 as the recovery key,
-and every copy of it in the install logs is shredded.
+Enrolment happens inside the installer, while the volume is already open,
+because a first-boot script could never run: the disk would ask for the
+passphrase first. `tpm-unlock` installs Clevis into the target and binds
+the volume to the TPM 2.0 against PCR 7 (secure-boot state); Ubuntu's own
+initramfs then unlocks it at boot, no dracut swap needed. Move the disk to
+another machine, or change the firmware, and it asks for the passphrase
+instead. The passphrase stays in keyslot 0 as the recovery key, and the
+install logs that contain it are shredded on first boot.
 
-`usb-keyfile` is for hardware without a TPM 2.0. First boot writes a random
-256-byte key to a partition labelled `linux-key`, enrols it as a keyslot,
-and points crypttab at it through cryptsetup's `passdev` keyscript with a
-10-second wait. Stick in: boots. Stick out: passphrase prompt.
+`usb-keyfile` is for hardware without a TPM 2.0. With the key stick plugged
+in during the install, a random 256-byte key is written to its `linux-key`
+partition (or reused if one is there), enrolled as a keyslot, and crypttab
+points at it through cryptsetup's `passdev` keyscript with a 10-second
+wait. Stick in: boots. Stick out: passphrase prompt.
 
 Both are verified by `isobake build --verify`, which attaches an emulated
-TPM or a virtual key stick to the VM and requires an unattended third boot.
+TPM (`swtpm`) or a virtual key stick to the VM, keeps UEFI NVRAM across
+phases like a real machine, and requires the first boot and a further
+reboot to come up unattended.
 
 Limits worth knowing: the LUKS passphrase has to reach the installer in
 clear, so it is in `/nocloud/user-data` on the ISO. Treat built ISOs as
@@ -241,8 +246,9 @@ since the grub layout is the same. Desktop ISOs are not tested.
    menu timeout to 1, and asks xorriso to write a new ISO with the patched
    grub plus `/nocloud/user-data` and `/nocloud/meta-data`, boot equipment
    replayed from the source.
-5. `verify.py` runs QEMU with `-no-reboot` three times, ISO then disk then
-   disk again, and treats three clean exits as pass.
+5. `verify.py` runs QEMU three times, ISO then disk then disk again, with a
+   persistent NVRAM image so guest reboots behave like real hardware. QEMU
+   exits only when the guest powers off; three clean exits are a pass.
 
 ## Security notes
 

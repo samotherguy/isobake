@@ -1,15 +1,16 @@
 autoinstall:
+  late-commands:
+    - curtin in-target -- apt-get install -y clevis clevis-luks clevis-tpm2 clevis-initramfs tpm2-tools
+    - |
+      set -e
+      [ -w /dev/console ] && exec >/dev/console 2>&1
+      dev=$(blkid -t TYPE=crypto_LUKS -o device | head -1)
+      [ -n "$dev" ] || { echo "tpm-unlock: no LUKS device found; add the encrypted-disk preset" >&2; exit 1; }
+      [ -e /dev/tpmrm0 ] || { echo "tpm-unlock: no TPM 2.0 found (/dev/tpmrm0 missing)" >&2; exit 1; }
+      printf '%s' '${luks_passphrase}' > /target/root/isobake-luks.key
+      curtin in-target -- clevis luks bind -y -k /root/isobake-luks.key -d "$dev" tpm2 '{"pcr_bank":"sha256","pcr_ids":"7"}'
+      shred -u /target/root/isobake-luks.key
+      curtin in-target -- update-initramfs -u -k all
   user-data:
     runcmd:
-      - |
-        set -e
-        apt-get install -y dracut tpm2-tools
-        dev=$(blkid -t TYPE=crypto_LUKS -o device | head -1)
-        printf '%s' '${luks_passphrase}' > /run/isobake-luks.key
-        systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 --unlock-key-file=/run/isobake-luks.key "$dev"
-        rm -f /run/isobake-luks.key
-        sed -i 's/\(\bluks\b\)\(,tpm2-device=auto\)\?/\1,tpm2-device=auto/' /etc/crypttab
-        printf 'hostonly="yes"\nadd_dracutmodules+=" tpm2-tss crypt "\n' > /etc/dracut.conf.d/isobake-tpm2.conf
-        dracut -f --regenerate-all
-        update-grub
-        find /var/lib/cloud /var/log/installer -type f -exec grep -lF '${luks_passphrase}' {} + 2>/dev/null | xargs -r shred -u
+      - find /var/log/installer -type f -exec shred -u {} + 2>/dev/null || true
