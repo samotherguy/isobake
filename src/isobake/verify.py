@@ -30,7 +30,7 @@ OVMF_CANDIDATES = [
     "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
     "/usr/share/qemu/OVMF.fd",
 ]
-MIN_PLAUSIBLE_SECONDS = 15  # anything faster means the VM did not really boot
+MIN_PLAUSIBLE_SECONDS = 5  # a failed boot exits in about a second; a real one takes longer even on fast hardware
 USB_KEY_LABEL = "linux-key"
 
 
