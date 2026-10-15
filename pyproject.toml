@@ -30,8 +30,8 @@ dev = ["pytest>=7", "ruff>=0.4"]
 isobake = "isobake.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Abhyuday98/isobake"
-Issues = "https://github.com/Abhyuday98/isobake/issues"
+Homepage = "https://github.com/samotherguy/isobake"
+Issues = "https://github.com/samotherguy/isobake/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

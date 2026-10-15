@@ -32,5 +32,5 @@ in one session, test-first per module, one commit per task.
     under `skills/isobake/`.
 12. **End to end.** fetch 24.04, build with base + poweroff-after-install,
     `isobake verify` under KVM on this machine. Fix anything found.
-13. **Publish.** create public repo `Abhyuday98/isobake`, push, confirm CI
+13. **Publish.** create public repo `samotherguy/isobake`, push, confirm CI
     green, tag v0.1.0.
